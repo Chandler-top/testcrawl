@@ -1,0 +1,173 @@
+from pymongo import MongoClient
+from bs4 import BeautifulSoup
+
+import requests
+import re
+import os
+import gridfs
+
+headers = {
+    'Accept-Language' : 'zh-CN,zh;q=0.8,en;q=0.6',
+    'Accept-Encoding' : 'gzip, deflate, sdch, br, utf8',
+    'Connection' : 'keep-alive',
+    'Pragma' : 'no-cache',
+    'Cache-Control' : 'no-cache',
+    'Accept' : 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+    'User-Agent': 'Mozilla/8.0 (Macintosh; Intel Mac OS X 10_12_4) '
+                  'AppleWebKit/537.36(KHTML, like Gecko) Chrome/57.0.2987.144 Safari/573.44'
+}
+
+class mgpyh:
+    itemnum = ""
+    timestamp = ""
+    href = ""
+    title = ""
+    price = ""
+    shopinghref = ""
+    description = ""
+    imgfname = ""
+    txtfname = ""
+    filebuf = ""
+    path = '/home/z640/Data/'
+
+
+    def save_image(self, image_url):
+        resp = requests.get(image_url)
+        page = resp.content
+        fpath = os.path.join(self.path, self.itemnum)
+
+        if os.path.isdir(fpath):
+            pass
+        else:
+            os.mkdir(fpath)
+
+        outfile = open(fpath + "/" + self.itemnum, 'wb+')
+        outfile.write(page)
+        outfile.close()
+
+    def mgpyh_commodityurl(self):
+        return None
+
+    def mgpyh_getitemdesc(self, itemurl):
+        r = requests.get(itemurl, headers=headers)
+        r.raise_for_status()
+        r.encoding = 'utf8'
+        descsoup = BeautifulSoup(r.text, "html.parser")
+        contents = descsoup.find("div", {"class": "post-content img-max-size"}, {"data-tree": "false"})
+        if contents is not None:
+            txts = ""
+            # print(contents)
+            for content in contents.find_all("p"):
+                txts = txts + content.text
+            self.filebuf = self.filebuf + "\nitem description: " + txts
+            print("item description: ", txts)
+
+    def mgpyh_spider(self, url):
+        try:
+            r = requests.get(url,headers = headers)
+            p = re.compile('\s+')
+
+            print(r.status_code)
+            r.raise_for_status()
+            # r.encoding = r.apparent_encoding
+            r.encoding = 'utf8'
+            demo = r.text
+            soup = BeautifulSoup(demo, "html.parser")
+            section = soup.find("section", {"class" : "product-show"})
+            page = section.find("ul", {"id" : "product-list"})['page']
+            print("the ", page, "page: ")
+            iteseri = 1
+            for item in section.find_all("li", {"class" : "content-item"}):
+                self.filebuf = ""
+                print("\nthe ", iteseri, "item detail: ")
+                self.filebuf = self.filebuf + "\nitem timestamp: " + item['data-timestamp']
+                print("item timestamp: ", item['data-timestamp'])
+                taghref = 0
+                for em in item.find_all("a"):
+                    if taghref == 0:
+                        itemhref = "item href: http://www.mgpyh.com" + em['href']
+                        self.filebuf = self.filebuf + "\nitem href: http://www.mgpyh.com" + em['href']
+                        print(itemhref)
+                        itemurl = "http://www.mgpyh.com" + em['href']
+                        self.itemnum = (em['href'][em['href'].find('/', 1) + 1: -1])
+                        self.mgpyh_getitemdesc(itemurl)
+                        taghref = 1
+
+                    if em.find("img") is not None:
+                        self.imgfname = em.find("img")['src']
+
+                        print("item image: ", em.find("img")['src'])
+                        if self.imgfname:
+                            self.save_image(em.find("img")['src'])
+
+                    if em.find("h1") is not None :
+                        title = re.sub(p, ' ', em.find("h1").text)
+                        if title is not None:
+                            titles = re.split('$|￥|€|£|₤', title)
+                            self.filebuf = self.filebuf + "\nitem title:" + titles[0]
+                            print("item title: ", titles[0])
+                        else:
+                            print("ops, the item title can't get...")
+                        if em.find("em") is not None:
+                            print("item price: ", re.sub(p, '', em.find("em").text))
+                            self.filebuf = self.filebuf + "\nitem price: " + re.sub(p, '', em.find("em").text)
+
+                    if em.find(text = "直达链接") is not None:
+                        print("item shoping href: http://www.mgpyh.com" + em['href'])
+                        self.filebuf = self.filebuf + "\nitem shoping href: http://www.mgpyh.com" + em['href']
+                        fakeurl = "http://www.mgpyh.com" + em['href']
+                        # orgurl = mgpyh_commodityurl(fakeurl)
+
+                self.outputfile()
+                iteseri = iteseri + 1
+        except:
+            print("异常")
+
+    def outputfile(self):
+        fpath = os.path.join(self.path, self.itemnum)
+        if os.path.isdir(fpath):
+            pass
+        else:
+            os.mkdir(fpath)
+
+        outfile = open(fpath + "/" + self.itemnum + ".txt", 'w+')
+        outfile.write(self.filebuf)
+        outfile.close()
+
+class mongodb:
+
+    item = {
+        "timestamp" : 1500339300,
+        "num" : "0398254",
+        "href" : "http://www.mgpyh.com/recommend/0398254/",
+        "description" : "天猫苏宁官方店目前售价3999元，可在移动端用1积分抽取的满3000-300券，叠加后实付3699元到手，相比之前推荐还有200元的降幅。有需要的朋友可以关注。三菱重工（MITSUBISHI）这款型号为SRKEKC35HVB(KFR-35GW/EKCVBp)的壁挂式空调，制冷匹数为1.5P，内外机全直流变频，使用三菱原装DC转子压缩机，制冷剂为新冷媒R410A，以实现更高压缩比，以拥有更高效能。制冷量1100～4000W，制热量1300～5300瓦不含电辅热，能效比4.13，达到国家规定的2级能效标准。循环风量550立方米/小时，运行噪音控制在40分贝。",
+        "title" : "三菱重工（MITSUBISHI） SRKEKC35HVB 1.5匹 壁挂式空调 直流变频 双转子原装进口压缩机",
+        "price" : "￥3699",
+        "shoping href" : "http://www.mgpyh.com/goods/4sq77"
+    }
+
+    def dbconn(self):
+        client = MongoClient('mongodb://localhost:27017')
+        db = client.crawl #链接到指定的crawl数据库
+        itemset = db.mgpyh #连接到指定的mgpyh的表
+
+    # def dbinsert(self):
+        item = itemset.find_one({"num": "0398254"})
+        if item == None:
+            itemset.insert_one(self.item)
+            fs = gridfs.GridFS(db)
+            f = open("/home/z640/Data/0398254/0398254", 'rb+')
+            buf = f.read()
+            f.close()
+            fs.put(buf, content_type="jpg", filename="0398254")
+        else:
+            print("mgpyh db has the item 0398254 already")
+
+if __name__ == '__main__':
+
+    testdb = mongodb()
+    testdb.dbconn()
+    # testdb.dbinsert()
+    # url = 'http://www.mgpyh.com'
+    # spmgpyh = mgpyh()
+    # spmgpyh.mgpyh_spider(url)
